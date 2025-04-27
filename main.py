@@ -15,7 +15,8 @@ from bs4 import BeautifulSoup
 
 BASE_API = "https://skylab-api.rocketseat.com.br"
 BASE_URL = "https://app.rocketseat.com.br"
-SESSION_PATH = Path(".session.pkl")
+SESSION_PATH = Path(os.getenv("SESSION_DIR", ".")) / ".session.pkl"
+SESSION_PATH.parent.mkdir(exist_ok=True)
 
 
 def clear_screen():
@@ -291,56 +292,136 @@ class Rocketseat(RocketseatProperties):
             )
             self.session.headers["Referer"] = "https://app.rocketseat.com.br/"
 
-    def __get_total_course_size(self, playlist_url: str) -> int:
-        """Calcula o tamanho total estimado do curso (somando os segmentos de vídeo)"""
-        playlist_content = self.session.get(playlist_url).text
-        playlist = m3u8.loads(playlist_content)
-        
-        total_size = 0  # Tamanho total estimado (em bytes)
-        
-        # Estimando o tamanho de cada segmento
-        for segment in playlist.segments:
-            # Verificar o tamanho do segmento
-            response = self.session.head(segment.uri)
-            content_length = response.headers.get('Content-Length')
-            if content_length:
-                total_size += int(content_length)  # Adicionar o tamanho do segmento
-        
-        return total_size
+    def _download_video(self):
+        """essa disgraça vai baixar o video, vai basicamente pegar o módulo id e instanciar a classe de download passando como argumento o save_path"""
 
-    def __download_playlist(self, playlist_url: str):
-        self._create_temp_folder()
-        playlist_content = self.session.get(playlist_url).text
-        playlist = m3u8.loads(playlist_content)
+        PandaVideo(
+            f"https://player-vz-762f4670-e04.tv.pandavideo.com.br/embed/?v={self.lesson_video_id}",
+            str(self.save_path / "aulinha.mp4"),
+        ).download()
 
-        # Mostrar as qualidades e calcular o tamanho total estimado
-        print("Qualidades disponíveis:")
-        for i, playlist_item in enumerate(playlist.playlists):
-            resolution = playlist_item.stream_info.resolution
-            print(f"[{i+1}] - {resolution[0]}p x {resolution[1]}p")
+    def _save_lesson_description(self):
+        """Salva a descrição da aula se houver num aquivo txt"""
+        if self.lesson_description:
+            with (self.save_path / "descricao.txt").open("w") as file:
+                file.write(self.lesson_description)
 
-        choice = int(input("Escolha a qualidade do vídeo (número): "))
-        selected_playlist = playlist.playlists[choice - 1]
+    def _download_lesson_attachments(self):
+        """Baixa, se houver, anexos para a aula (só iterar sobre downloads e dar get em file_url)"""
+        for attach in self.lesson_attachments:
+            filename = f"{sanitize_string(attach['title'])} - {attach['file']}"
+            file_path = self.save_path / filename
+            if file_path.exists():
+                print(f"\t\t\t\tAnexo {filename} já existe. Pulando...")
+                continue
+            with (self.save_path / filename).open("wb") as f:
+                f.write(self.session.get(attach["file_url"]).content)
+            print(f"\t\t\t\tAnexo baixado: {filename}")
 
-        # Calcular o tamanho estimado do curso (em bytes)
-        total_size = self.__get_total_course_size(f"https://{self.domain}/{self.video_id}/{selected_playlist.uri}")
-        
-        # Exibir o tamanho total estimado
-        print(f"\nTamanho total estimado para o curso: {total_size / (1024**2):.2f} MB")
-
-        # Perguntar ao usuário se deseja continuar
-        confirmation = input("Deseja continuar com o download? (y/n): ")
-        if confirmation.lower() != 'y':
-            print("Download cancelado.")
-            return
-
-        # Continuar com o download se confirmado
-        best_playlist_url = (
-            f"https://{self.domain}/{self.video_id}/{selected_playlist.uri}"
-            if not selected_playlist.uri.startswith("http")
-            else selected_playlist.uri
+    def _download_lesson(self):
+        """finalmente sapoha vai indentifcicar o tipo de conteúdo e chamar a função que trata do tipo específico da entrega de copnteúdo da lessson"""
+        print(
+            f"\t\t\t\tBaixando aula {self.lesson_index} de {self.lessons_count}: {self.lesson_name}"
         )
-        self.__download_playlist_from_url(best_playlist_url)
+
+        factory = {
+            "video": self._download_video,
+        }
+
+        factory.get(
+            self.lesson_type,
+            lambda: print(f"Tipo de aula desconhecido: {self.lesson_type}"),
+        )()
+
+        self._save_lesson_description()
+
+        self._download_lesson_attachments()
+
+    def _download_group(self):
+        """Só itera sobre as lessons de dentro do grupo e chama o downloader"""
+        print(
+            f"\t\t\tBaixando grupo {self.group_index} de {self.groups_count}: {self.group_name}"
+        )
+
+        for i, self.lesson in enumerate(self.lessons, 1):
+            self.lesson.update(script_index=i)
+            self._download_lesson()
+
+    def _download_module(self):
+        """essa disgraça lista os grupos, itera sobre eles e chama o downloader group"""
+        print(
+            f"\t\tBaixando módulo {self.module_index} de {self.modules_count}: {self.module_name}"
+        )
+
+        data = self.session.get(f"{BASE_API}/journey-nodes/{self.module_slug}").json()
+
+        if data["cluster"] is None:
+            self.groups = [data["group"]]
+        else:
+            self.groups = data["cluster"]["groups"]
+
+        for i, self.group in enumerate(self.groups, 1):
+            self.group.update(script_index=i)
+            self._download_group()
+
+    def _download_level(self):
+        """Itera sobre os níveis e seus módulos e bota pra baixar topado"""
+        print(
+            f"\tBaixando level {self.level_index} de {self.levels_count}: {self.level_name}"
+        )
+
+        if self.level_type == "lesson":
+            self.lessons = [self.level["lesson"]]
+            self.lesson = self.lessons[0]
+            self.lesson.update(script_index=1)
+            self._download_lesson()
+        elif self.level_type == "cluster":
+            self.modules = [self.level]
+            self.module = self.modules[0]
+            self._download_module()
+        else:
+            print(
+                f"\tO tipo de level é {self.level_type} o qual não foi (talvez nem será) implementado neste script."
+            )
+
+    def __load_nodes(self) -> list[dict]:
+        """Esta função (agora) vai carregar o json vindo em embedding num javascript renderizado no html pelo servidor."""
+
+        res = self.session.get(f"{BASE_URL}/{self.specialization_uri}/contents")
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        try:
+            script_tag = next(
+                script
+                for script in soup.find_all("script")
+                if "journeyId" in script.text
+            )
+        except StopIteration:
+            print("O script contendo as aulas não foi encontrado...")
+            with open("server_response.html", "wb") as f:
+                f.write(res.content)
+            exit(1)
+        script_text = script_tag.text.strip().replace('\\"', '"').replace("\\\\", "\\")
+
+        start = script_text.index('{"journey')
+
+        json_content = json.loads(script_text[start:].split(',"children')[0] + "}")
+
+        with open("json_content.json", "w", encoding="utf-8") as f:
+            json.dump(json_content, f, indent=4, ensure_ascii=False)
+
+        return json_content["journey"]["nodes"]
+
+    def _download_courses(self):
+        """Lista levels (são nodes agora) e itera sobre elas chamando download modules"""
+        clear_screen()
+        print(f"Baixando especialização {self.specialization_name}")
+        self.levels = self.__load_nodes()
+
+        for i, self.level in enumerate(self.levels, 1):
+            self.level.update(script_index=i)
+
+            self._download_level()
 
     def login(self, username: str, password: str):
         """Faz login setando a sessão utilizando username e password fornecidos na instancialização"""

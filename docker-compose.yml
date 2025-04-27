@@ -1,13 +1,15 @@
-version: '3.8'
-
 services:
   rocket_download:
     build: .
     container_name: rocket_download
+
     volumes:
-      - ./Cursos:/app/Cursos
+      - ./:/app
+      - ./cache:/app/cache       
+
     environment:
       - PYTHONUNBUFFERED=1
-      - PATH=/usr/local/bin/ffmpeg:$PATH 
+      - SESSION_DIR=/app/cache    
+
     stdin_open: true
     tty: true
