@@ -1,0 +1,4 @@
+requests
+beautifulsoup4
+m3u8
+ffmpeg-python

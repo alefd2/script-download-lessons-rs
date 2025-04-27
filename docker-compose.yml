@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  rocket_download:
+    build: .
+    container_name: rocket_download
+    volumes:
+      - ./Cursos:/app/Cursos
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PATH=/usr/local/bin/ffmpeg:$PATH 
+    stdin_open: true
+    tty: true
