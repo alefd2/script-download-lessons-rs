@@ -162,28 +162,25 @@ class Rocketseat:
             progress_data = res.json()
             modules_data = progress_data.get("nodes", [])
 
-            # Get HTML content from journey page to extract cluster_slugs
             journey_url = f"https://app.rocketseat.com.br/journey/{specialization_slug}/contents"
             html_content = self.session.get(journey_url).text
 
-            # Extract cluster slugs from HTML
             for module in modules_data:
-                # Only process if type is cluster
                 if module.get("type") == "cluster":
-                    # Search for module link pattern in HTML
                     search_pattern = f'<a class="w-full" href="/classroom/'
                     html_pos = html_content.find(search_pattern)
                     if html_pos != -1:
-                        # Extract cluster slug from href
                         start_pos = html_pos + len(search_pattern)
                         end_pos = html_content.find('"', start_pos)
-                        cluster_slug = html_content[start_pos:end_pos].split(">")[0].strip()
+                        cluster_slug = html_content[start_pos:end_pos]
+                        print(f"Encontrado cluster_slug para módulo {module['title']}: {cluster_slug}")
                         module["cluster_slug"] = cluster_slug
-                        # Move search position forward
                         html_content = html_content[end_pos:]
                     else:
+                        print(f"Não encontrado cluster_slug para módulo {module['title']}")
                         module["cluster_slug"] = None
                 else:
+                    print(f"Módulo {module['title']} não é do tipo cluster")
                     module["cluster_slug"] = None
 
             print(f"Encontrados {len(modules_data)} módulos.")
@@ -195,9 +192,7 @@ class Rocketseat:
         return modules_data
 
     def __load_lessons_from_cluster(self, cluster_slug: str):
-        """
-        Carrega as aulas de um cluster específico
-        """
+        # Carrega as aulas de um cluster específico
         print(f"Buscando lições para o cluster: {cluster_slug}")
         url = f"{BASE_API}/journey-nodes/{cluster_slug}"
         
@@ -206,37 +201,110 @@ class Rocketseat:
             res.raise_for_status()
             
             module_data = res.json()
+            print(f"Resposta da API para o cluster {cluster_slug}:")
+            print(json.dumps(module_data, indent=2))
             
             # Salva estrutura para debug se diretório logs existir
             if os.path.exists("logs"):
                 with open(f"logs/{sanitize_string(cluster_slug)}_cluster_details.json", "w") as f:
                     json.dump(module_data, f, indent=2)
             
-            lessons = []
+            groups = []
             if "cluster" in module_data and module_data["cluster"]:
                 cluster = module_data["cluster"]
                 
                 # Navegar pelos grupos de lições
                 for group in cluster.get("groups", []):
+                    group_title = group.get('title', 'Sem Grupo')
+                    print(f"\nProcessando grupo: {group_title}")
+                    
+                    group_lessons = []
                     for lesson in group.get("lessons", []):
                         if "last" in lesson and lesson["last"]:
-                            lessons.append(lesson["last"])
+                            lesson_data = lesson["last"]
+                            lesson_data["group_title"] = group_title
+                            print(f"Adicionando aula: {lesson_data.get('title', 'Sem título')}")
+                            group_lessons.append(lesson_data)
+                    
+                    if group_lessons:
+                        groups.append({
+                            "title": group_title,
+                            "lessons": group_lessons
+                        })
             
-            print(f"Encontradas {len(lessons)} lições no cluster")
-            return lessons
+            print(f"\nEncontrados {len(groups)} grupos com um total de {sum(len(g['lessons']) for g in groups)} lições")
+            return groups
         except Exception as e:
             print(f"Erro ao buscar lições do cluster {cluster_slug}: {e}")
             return []
 
     def _download_video(self, video_id: str, save_path: Path):
-        print(f"Iniciando download do vídeo {video_id}")
         PandaVideo(video_id, str(save_path / "aulinha.mp4")).download()
 
-    def _download_lesson(self, lesson: dict, save_path: Path):
-        if isinstance(lesson, dict) and 'title' in lesson and 'resource' in lesson:
-            print(f"\tBaixando aula: {lesson['title']}")
-            resource = lesson["resource"].split("/")[-1] if "/" in lesson["resource"] else lesson["resource"]
-            PandaVideo(resource, str(save_path / f"{sanitize_string(lesson['title'])}.mp4")).download()
+    def _download_lesson(self, lesson: dict, save_path: Path, group_index: int, lesson_index: int):
+        if isinstance(lesson, dict) and 'title' in lesson:
+            title = lesson.get('title', 'Sem título')
+            group_title = lesson.get('group_title', 'Sem Grupo')
+            print(f"\tBaixando aula {group_index}.{lesson_index}: {title} (Grupo: {group_title})")
+            
+            # Criar pasta do grupo se não existir
+            group_folder = save_path / f"{group_index:02d}. {sanitize_string(group_title)}"
+            group_folder.mkdir(exist_ok=True)
+            
+            # Criar arquivo base com número sequencial do grupo
+            base_name = f"{lesson_index:02d}. {sanitize_string(title)}"
+            
+            # Salvar metadados em arquivo .txt
+            with open(group_folder / f"{base_name}.txt", "w", encoding="utf-8") as f:
+                f.write(f"Grupo: {group_title}\n")
+                f.write(f"Aula: {title}\n\n")
+                
+                # Adicionar descrição se existir
+                if 'description' in lesson and lesson['description']:
+                    f.write(f"Descrição:\n{lesson['description']}\n\n")
+                
+                # Adicionar outras informações se existirem
+                if 'duration' in lesson:
+                    minutes = lesson['duration'] // 60
+                    seconds = lesson['duration'] % 60
+                    f.write(f"Duração: {minutes}min {seconds}s\n")
+                
+                if 'author' in lesson and lesson['author'] and isinstance(lesson['author'], dict):
+                    author_name = lesson['author'].get('name', '')
+                    if author_name:
+                        f.write(f"Autor: {author_name}\n")
+            
+            # Baixar o vídeo se tiver resource
+            if 'resource' in lesson and lesson['resource']:
+                resource = lesson["resource"].split("/")[-1] if "/" in lesson["resource"] else lesson["resource"]
+                PandaVideo(resource, str(group_folder / f"{base_name}.mp4")).download()
+            else:
+                print(f"\tAula '{title}' não tem recurso de vídeo")
+            
+            # Baixar arquivos adicionais
+            if 'downloads' in lesson and lesson['downloads']:
+                downloads_dir = group_folder / f"{base_name}_arquivos"
+                downloads_dir.mkdir(exist_ok=True)
+                
+                for download in lesson['downloads']:
+                    if 'file_url' in download and download['file_url']:
+                        download_url = download['file_url']
+                        download_title = download.get('title', 'arquivo')
+                        file_ext = os.path.splitext(download_url)[1]
+                        
+                        download_path = downloads_dir / f"{sanitize_string(download_title)}{file_ext}"
+                        print(f"\t\tBaixando material: {download_title}")
+                        
+                        try:
+                            response = requests.get(download_url)
+                            response.raise_for_status()
+                            
+                            with open(download_path, 'wb') as f:
+                                f.write(response.content)
+                                
+                            print(f"\t\tMaterial salvo em: {download_path}")
+                        except Exception as e:
+                            print(f"\t\tErro ao baixar material: {e}")
         else:
             print(f"\tFormato de aula não reconhecido: {lesson}")
 
@@ -254,7 +322,7 @@ class Rocketseat:
         for module in selected_modules:
             module_title = module["title"]
             course_name = module.get("course", {}).get("title", "Sem Nome")
-            print(f"Baixando módulo: {module_title} do curso: {course_name}")
+            print(f"\nBaixando módulo: {module_title} do curso: {course_name}")
             save_path = Path("Cursos") / specialization_name / sanitize_string(course_name) / sanitize_string(module_title)
             save_path.mkdir(parents=True, exist_ok=True)
 
@@ -263,16 +331,23 @@ class Rocketseat:
                 cluster_slug = module["cluster_slug"]
                 print(f"Usando cluster_slug: {cluster_slug}")
                 
-                # Obter aulas a partir do cluster_slug
-                lessons = self.__load_lessons_from_cluster(cluster_slug)
+                # Obter grupos e aulas a partir do cluster_slug
+                groups = self.__load_lessons_from_cluster(cluster_slug)
                 
-                if not lessons:
-                    print(f"Nenhuma aula encontrada para o módulo: {module_title}")
+                if not groups:
+                    print(f"Nenhum grupo encontrado para o módulo: {module_title}")
                     continue
                 
-                # Baixa cada aula
-                for lesson in lessons:
-                    self._download_lesson(lesson, save_path)
+                # Baixa cada grupo sequencialmente
+                for group_index, group in enumerate(groups, 1):
+                    group_title = group["title"]
+                    print(f"\nProcessando grupo {group_index}: {group_title}")
+                    
+                    # Baixa cada aula do grupo
+                    for lesson_index, lesson in enumerate(group["lessons"], 1):
+                        self._download_lesson(lesson, save_path, group_index, lesson_index)
+                    
+                    print(f"Grupo {group_index} ({group_title}) concluído!")
             else:
                 print(f"Módulo não possui cluster_slug: {module_title}. Pulando.")
                 continue

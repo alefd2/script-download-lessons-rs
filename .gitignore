@@ -1,4 +1,8 @@
 /venv
-/logs
+logs
 /cache
-/cookies
+/Cursos
+/.temp
+
+.session.pkl
+teste.html
