@@ -31,8 +31,15 @@ def sanitize_string(string: str):
 class PandaVideo:
     def __init__(self, video_id: str, save_path: str, threads_count=10):
         self.video_id = video_id
-        self.domain = f"b-vz-762f4670-e04.tv.pandavideo.com.br"
+        self.domain = "b-vz-762f4670-e04.tv.pandavideo.com.br"
         self.session = requests.session()
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Origin": "https://app.rocketseat.com.br",
+            "Referer": "https://app.rocketseat.com.br/",
+        })
         self.save_path = save_path
         self.threads_count = threads_count
 
@@ -117,6 +124,240 @@ class PandaVideo:
         self.__download_playlist(best_playlist_url)
 
 
+class CDNVideo:
+    def __init__(self, video_id: str, save_path: str, threads_count=10):
+        self.video_id = video_id
+        self.domain = "vz-dc851587-83d.b-cdn.net"
+        self.session = requests.session()
+        self.session.headers.update({
+            "accept": "*/*",
+            "accept-language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7,it;q=0.6",
+            "dnt": "1",
+            "origin": "https://iframe.mediadelivery.net",
+            "priority": "u=1, i",
+            "referer": "https://iframe.mediadelivery.net/",
+            "sec-ch-ua": '"Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Linux"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "cross-site",
+            "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+        })
+        self.save_path = save_path
+        self.threads_count = threads_count
+
+    def _create_temp_folder(self):
+        foldername = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=5))
+        self.temp_folder = Path(".temp") / foldername
+        if not os.path.exists(self.temp_folder):
+            os.makedirs(self.temp_folder)
+        return self.temp_folder
+
+    def __convert_segments(self):
+        ffmpeg_cmd = f'ffmpeg -hide_banner -loglevel error -stats -y -i "{self.temp_folder}/playlist.m3u8" -c copy -bsf:a aac_adtstoasc "{self.save_path}"'
+        os.system(ffmpeg_cmd)
+        for filename in os.listdir(self.temp_folder):
+            os.remove(self.temp_folder / filename)
+        os.removedirs(self.temp_folder)
+
+    def __download_playlist(self, playlist_url: str):
+        print("Iniciando o download dos segmentos...")
+        self._create_temp_folder()
+        
+        try:
+            # Baixar a playlist principal
+            response = self.session.get(playlist_url)
+            response.raise_for_status()
+            playlist_content = response.text
+            print(f"Conteúdo da playlist principal:\n{playlist_content}")
+            
+            # Carregar a playlist principal
+            main_playlist = m3u8.loads(playlist_content)
+            
+            # Se for uma playlist master (contém outras playlists)
+            if main_playlist.playlists:
+                print("Playlist master encontrada, selecionando segunda melhor qualidade...")
+                # Ordenar as playlists por qualidade
+                sorted_playlists = sorted(
+                    main_playlist.playlists,
+                    key=lambda x: x.stream_info.resolution[0] * x.stream_info.resolution[1],
+                    reverse=True
+                )
+                
+                # Selecionar a segunda melhor qualidade
+                if len(sorted_playlists) > 1:
+                    second_best_playlist = sorted_playlists[1]
+                    print(f"Selecionada segunda melhor qualidade: {second_best_playlist.stream_info.resolution[0]}x{second_best_playlist.stream_info.resolution[1]}")
+                else:
+                    # Se só tiver uma qualidade, usa ela
+                    second_best_playlist = sorted_playlists[0]
+                    print(f"Usando única qualidade disponível: {second_best_playlist.stream_info.resolution[0]}x{second_best_playlist.stream_info.resolution[1]}")
+                
+                # Baixar a playlist de qualidade específica
+                quality_playlist_url = second_best_playlist.uri
+                if not quality_playlist_url.startswith('http'):
+                    quality_playlist_url = f"https://{self.domain}/{self.video_id}/{quality_playlist_url}"
+                
+                print(f"Baixando playlist de qualidade: {quality_playlist_url}")
+                response = self.session.get(quality_playlist_url)
+                response.raise_for_status()
+                quality_playlist_content = response.text
+                print(f"Conteúdo da playlist de qualidade:\n{quality_playlist_content}")
+                
+                playlist = m3u8.loads(quality_playlist_content)
+            else:
+                # Se já for uma playlist de segmentos
+                playlist = main_playlist
+            
+            print(f"Playlist carregada com {len(playlist.segments)} segmentos")
+            
+            # Salvar a playlist final
+            with open(self.temp_folder / "playlist.m3u8", "w") as file:
+                file.write(playlist.dumps())
+            
+            threads = []
+            segment_queue = queue.Queue()
+            self.downloaded_segments = 0
+            self.total_segments = len(playlist.segments)
+            
+            # Ordenar os segmentos para garantir a ordem correta
+            def get_segment_number(segment):
+                filename = segment.uri.split('/')[-1]
+                if filename.startswith('video'):
+                    try:
+                        return int(filename[5:-3])
+                    except:
+                        return 0
+                return 0
+            
+            sorted_segments = sorted(playlist.segments, key=get_segment_number)
+            for segment in sorted_segments:
+                segment_queue.put(segment)
+
+            def worker():
+                while not segment_queue.empty():
+                    segment = segment_queue.get()
+                    try:
+                        # Atualizar headers para cada segmento
+                        segment_headers = {
+                            "sec-ch-ua-platform": '"Linux"',
+                            "Referer": "https://iframe.mediadelivery.net/",
+                            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+                            "sec-ch-ua": '"Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"',
+                            "DNT": "1",
+                            "sec-ch-ua-mobile": "?0"
+                        }
+                        self.session.headers.update(segment_headers)
+                        
+                        # Construir URL do segmento
+                        segment_url = segment.uri
+                        if not segment_url.startswith('http'):
+                            # Usar o formato exato do curl que funciona
+                            segment_url = f"https://{self.domain}/{self.video_id}/1080p/{segment_url}"
+                        
+                        print(f"Baixando segmento: {segment_url}")
+                        response = self.session.get(segment_url)
+                        response.raise_for_status()
+                        filename = segment.uri.split("/")[-1]
+                        file_path = self.temp_folder / filename
+                        with open(file_path, "wb") as file:
+                            file.write(response.content)
+                        print(f"Segmento {filename} baixado com sucesso")
+                        segment_queue.task_done()
+                        self.downloaded_segments += 1
+                        print(
+                            f"\rBaixando segmento {self.downloaded_segments} de {self.total_segments}... ",
+                            end="",
+                            flush=True,
+                        )
+                    except Exception as e:
+                        print(f"\nErro ao baixar segmento {segment_url}: {str(e)}")
+                        segment_queue.task_done()
+
+            for _ in range(self.threads_count):
+                thread = threading.Thread(target=worker)
+                thread.start()
+                threads.append(thread)
+
+            for thread in threads:
+                thread.join()
+
+            segment_queue.join()
+
+            print("\nDownload concluído!\n")
+            print(f"Verificando arquivos baixados em {self.temp_folder}")
+            for f in os.listdir(self.temp_folder):
+                print(f"Arquivo encontrado: {f}")
+
+            self.__convert_segments()
+            return True
+            
+        except Exception as e:
+            print(f"Erro ao processar playlist: {str(e)}")
+            return False
+
+    def download(self):
+        if os.path.exists(self.save_path):
+            print("\tArquivo já existe. Pulando download.")
+            return
+
+        print(f"Iniciando download do vídeo: {self.video_id}")
+        
+        # Tentar primeiro a playlist direta
+        playlists_url = f"https://{self.domain}/{self.video_id}/playlist.m3u8"
+        success = self.__download_playlist(playlists_url)
+        
+        if not success:
+            print("Não foi possível baixar o vídeo do CDN.")
+
+class VideoDownloader:
+    def __init__(self, video_id: str, save_path: str, threads_count=10):
+        self.video_id = video_id
+        self.save_path = save_path
+        self.threads_count = threads_count
+        self.panda = PandaVideo(video_id, save_path, threads_count)
+        self.cdn = CDNVideo(video_id, save_path, threads_count)
+
+    def __check_video_duration(self):
+        try:
+            cmd = f'ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{self.save_path}"'
+            duration = float(os.popen(cmd).read().strip())
+            return duration
+        except:
+            return 0
+
+    def download(self):
+        if os.path.exists(self.save_path):
+            print("\tArquivo já existe. Pulando download.")
+            return
+
+        # Tentar primeiro com o Panda
+        print("Tentando download com Panda...")
+        self.panda.download()
+        
+        # Verificar duração do vídeo
+        duration = self.__check_video_duration()
+        if duration > 10:  # Se o vídeo tem mais de 10 segundos, consideramos válido
+            print(f"Vídeo baixado com sucesso! Duração: {duration:.2f} segundos")
+            return
+        
+        print(f"Vídeo muito curto ({duration:.2f} segundos). Tentando CDN...")
+        if os.path.exists(self.save_path):
+            os.remove(self.save_path)
+        
+        # Tentar com o CDN
+        print("Tentando download com CDN...")
+        self.cdn.download()
+        
+        # Verificar duração novamente
+        duration = self.__check_video_duration()
+        if duration > 10:
+            print(f"Vídeo baixado com sucesso! Duração: {duration:.2f} segundos")
+        else:
+            print("Não foi possível baixar o vídeo de nenhum dos provedores disponíveis.")
+
+
 class Rocketseat:
     def __init__(self):
         self._session_exists = SESSION_PATH.exists()
@@ -157,6 +398,9 @@ class Rocketseat:
         res.raise_for_status()
 
         modules_data = []
+        
+        # type: 'challenge', e que o title começe com Quiz
+        # challenge: {slug: 'quiz-formacao-desenvolvimento-ia-estatistica'}
 
         try:
             progress_data = res.json()
@@ -239,7 +483,7 @@ class Rocketseat:
             return []
 
     def _download_video(self, video_id: str, save_path: Path):
-        PandaVideo(video_id, str(save_path / "aulinha.mp4")).download()
+        VideoDownloader(video_id, str(save_path / "aulinha.mp4")).download()
 
     def _download_lesson(self, lesson: dict, save_path: Path, group_index: int, lesson_index: int):
         if isinstance(lesson, dict) and 'title' in lesson:
@@ -277,7 +521,7 @@ class Rocketseat:
             # Baixar o vídeo se tiver resource
             if 'resource' in lesson and lesson['resource']:
                 resource = lesson["resource"].split("/")[-1] if "/" in lesson["resource"] else lesson["resource"]
-                PandaVideo(resource, str(group_folder / f"{base_name}.mp4")).download()
+                VideoDownloader(resource, str(group_folder / f"{base_name}.mp4")).download()
             else:
                 print(f"\tAula '{title}' não tem recurso de vídeo")
             
