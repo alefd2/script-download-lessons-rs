@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Optional
 from urllib.parse import parse_qs
+from datetime import datetime
 
 import m3u8
 import requests
@@ -26,6 +27,84 @@ def clear_screen():
 
 def sanitize_string(string: str):
     return re.sub(r'[@#$%&*/:^{}<>?"]', "", string).strip()
+
+
+class DownloadReport:
+    def __init__(self):
+        self.successful_downloads = []
+        self.failed_downloads = []
+        self.start_time = None
+        self.end_time = None
+    
+    def start(self):
+        self.start_time = datetime.now()
+        print(f"Início do download: {self.start_time.strftime('%d/%m/%Y %H:%M:%S')}")
+    
+    def add_success(self, module_title, lesson_title):
+        self.successful_downloads.append({
+            'module': module_title,
+            'lesson': lesson_title,
+            'timestamp': datetime.now()
+        })
+        print(f"✓ Aula baixada com sucesso: {module_title} - {lesson_title}")
+    
+    def add_failure(self, module_title, lesson_title, error):
+        self.failed_downloads.append({
+            'module': module_title,
+            'lesson': lesson_title,
+            'error': str(error),
+            'timestamp': datetime.now()
+        })
+        print(f"✗ Erro ao baixar aula: {module_title} - {lesson_title}")
+        print(f"   Erro: {str(error)}")
+    
+    def finish(self):
+        self.end_time = datetime.now()
+        self.generate_report()
+    
+    def generate_report(self):
+        if not self.start_time or not self.end_time:
+            return "Relatório incompleto - download não finalizado"
+        
+        duration = self.end_time - self.start_time
+        total_attempts = len(self.successful_downloads) + len(self.failed_downloads)
+        
+        report = [
+            "=== RELATÓRIO DE DOWNLOAD ===",
+            f"Data: {self.end_time.strftime('%d/%m/%Y %H:%M:%S')}",
+            f"Duração total: {duration}",
+            f"Total de aulas: {total_attempts}",
+            f"Aulas baixadas com sucesso: {len(self.successful_downloads)}",
+            f"Aulas com erro: {len(self.failed_downloads)}",
+            "\n=== AULAS BAIXADAS COM SUCESSO ==="
+        ]
+        
+        for download in self.successful_downloads:
+            report.append(f"- Módulo: {download['module']}")
+            report.append(f"  Aula: {download['lesson']}")
+            report.append(f"  Horário: {download['timestamp'].strftime('%H:%M:%S')}")
+        
+        if self.failed_downloads:
+            report.append("\n=== AULAS COM ERRO ===")
+            for download in self.failed_downloads:
+                report.append(f"- Módulo: {download['module']}")
+                report.append(f"  Aula: {download['lesson']}")
+                report.append(f"  Erro: {download['error']}")
+                report.append(f"  Horário: {download['timestamp'].strftime('%H:%M:%S')}")
+        
+        report_text = "\n".join(report)
+        
+        # Salvar relatório em arquivo
+        report_path = Path("relatorios") / f"relatorio_{self.end_time.strftime('%Y%m%d_%H%M%S')}.txt"
+        report_path.parent.mkdir(exist_ok=True)
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write(report_text)
+        
+        # Imprimir relatório no console
+        print("\n" + "="*50)
+        print(report_text)
+        print("="*50)
+        print(f"\nRelatório salvo em: {report_path}")
 
 
 class PandaVideo:
@@ -250,10 +329,8 @@ class CDNVideo:
                         }
                         self.session.headers.update(segment_headers)
                         
-                        # Construir URL do segmento
                         segment_url = segment.uri
                         if not segment_url.startswith('http'):
-                            # Usar o formato exato do curl que funciona
                             segment_url = f"https://{self.domain}/{self.video_id}/1080p/{segment_url}"
                         
                         print(f"Baixando segmento: {segment_url}")
@@ -370,6 +447,7 @@ class Rocketseat:
                 "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
                 "Referer": BASE_URL,
             })
+        self.download_report = DownloadReport()
 
     def login(self, username: str, password: str):
         print("Realizando login...")
@@ -491,116 +569,135 @@ class Rocketseat:
             group_title = lesson.get('group_title', 'Sem Grupo')
             print(f"\tBaixando aula {group_index}.{lesson_index}: {title} (Grupo: {group_title})")
             
-            # Criar pasta do grupo se não existir
-            group_folder = save_path / f"{group_index:02d}. {sanitize_string(group_title)}"
-            group_folder.mkdir(exist_ok=True)
-            
-            # Criar arquivo base com número sequencial do grupo
-            base_name = f"{lesson_index:02d}. {sanitize_string(title)}"
-            
-            # Salvar metadados em arquivo .txt
-            with open(group_folder / f"{base_name}.txt", "w", encoding="utf-8") as f:
-                f.write(f"Grupo: {group_title}\n")
-                f.write(f"Aula: {title}\n\n")
+            try:
+                # Criar pasta do grupo se não existir
+                group_folder = save_path / f"{group_index:02d}. {sanitize_string(group_title)}"
+                group_folder.mkdir(exist_ok=True)
                 
-                # Adicionar descrição se existir
-                if 'description' in lesson and lesson['description']:
-                    f.write(f"Descrição:\n{lesson['description']}\n\n")
+                # Criar arquivo base com número sequencial do grupo
+                base_name = f"{lesson_index:02d}. {sanitize_string(title)}"
                 
-                # Adicionar outras informações se existirem
-                if 'duration' in lesson:
-                    minutes = lesson['duration'] // 60
-                    seconds = lesson['duration'] % 60
-                    f.write(f"Duração: {minutes}min {seconds}s\n")
+                # Salvar metadados em arquivo .txt
+                with open(group_folder / f"{base_name}.txt", "w", encoding="utf-8") as f:
+                    f.write(f"Grupo: {group_title}\n")
+                    f.write(f"Aula: {title}\n\n")
+                    
+                    # Adicionar descrição se existir
+                    if 'description' in lesson and lesson['description']:
+                        f.write(f"Descrição:\n{lesson['description']}\n\n")
+                    
+                    # Adicionar outras informações se existirem
+                    if 'duration' in lesson:
+                        minutes = lesson['duration'] // 60
+                        seconds = lesson['duration'] % 60
+                        f.write(f"Duração: {minutes}min {seconds}s\n")
+                    
+                    if 'author' in lesson and lesson['author'] and isinstance(lesson['author'], dict):
+                        author_name = lesson['author'].get('name', '')
+                        if author_name:
+                            f.write(f"Autor: {author_name}\n")
                 
-                if 'author' in lesson and lesson['author'] and isinstance(lesson['author'], dict):
-                    author_name = lesson['author'].get('name', '')
-                    if author_name:
-                        f.write(f"Autor: {author_name}\n")
-            
-            # Baixar o vídeo se tiver resource
-            if 'resource' in lesson and lesson['resource']:
-                resource = lesson["resource"].split("/")[-1] if "/" in lesson["resource"] else lesson["resource"]
-                VideoDownloader(resource, str(group_folder / f"{base_name}.mp4")).download()
-            else:
-                print(f"\tAula '{title}' não tem recurso de vídeo")
-            
-            # Baixar arquivos adicionais
-            if 'downloads' in lesson and lesson['downloads']:
-                downloads_dir = group_folder / f"{base_name}_arquivos"
-                downloads_dir.mkdir(exist_ok=True)
+                # Baixar o vídeo se tiver resource
+                if 'resource' in lesson and lesson['resource']:
+                    resource = lesson["resource"].split("/")[-1] if "/" in lesson["resource"] else lesson["resource"]
+                    VideoDownloader(resource, str(group_folder / f"{base_name}.mp4")).download()
+                    self.download_report.add_success(group_title, title)
+                else:
+                    print(f"\tAula '{title}' não tem recurso de vídeo")
+                    self.download_report.add_success(group_title, title)  # Considera sucesso mesmo sem vídeo
                 
-                for download in lesson['downloads']:
-                    if 'file_url' in download and download['file_url']:
-                        download_url = download['file_url']
-                        download_title = download.get('title', 'arquivo')
-                        file_ext = os.path.splitext(download_url)[1]
-                        
-                        download_path = downloads_dir / f"{sanitize_string(download_title)}{file_ext}"
-                        print(f"\t\tBaixando material: {download_title}")
-                        
-                        try:
-                            response = requests.get(download_url)
-                            response.raise_for_status()
+                # Baixar arquivos adicionais
+                if 'downloads' in lesson and lesson['downloads']:
+                    downloads_dir = group_folder / f"{base_name}_arquivos"
+                    downloads_dir.mkdir(exist_ok=True)
+                    
+                    for download in lesson['downloads']:
+                        if 'file_url' in download and download['file_url']:
+                            download_url = download['file_url']
+                            download_title = download.get('title', 'arquivo')
+                            file_ext = os.path.splitext(download_url)[1]
                             
-                            with open(download_path, 'wb') as f:
-                                f.write(response.content)
+                            download_path = downloads_dir / f"{sanitize_string(download_title)}{file_ext}"
+                            print(f"\t\tBaixando material: {download_title}")
+                            
+                            try:
+                                response = requests.get(download_url)
+                                response.raise_for_status()
                                 
-                            print(f"\t\tMaterial salvo em: {download_path}")
-                        except Exception as e:
-                            print(f"\t\tErro ao baixar material: {e}")
+                                with open(download_path, 'wb') as f:
+                                    f.write(response.content)
+                                    
+                                print(f"\t\tMaterial salvo em: {download_path}")
+                            except Exception as e:
+                                print(f"\t\tErro ao baixar material: {e}")
+            except Exception as e:
+                self.download_report.add_failure(group_title, title, e)
+                print(f"\tErro ao baixar aula: {str(e)}")
         else:
             print(f"\tFormato de aula não reconhecido: {lesson}")
 
     def _download_courses(self, specialization_slug: str, specialization_name: str):
         print(f"Baixando cursos da especialização: {specialization_name}")
-        modules = self.__load_modules(specialization_slug)
+        self.download_report.start()
+        
+        try:
+            modules = self.__load_modules(specialization_slug)
 
-        print("\nEscolha os módulos que você quer baixar:")
-        for i, module in enumerate(modules, 1):
-            print(f"[{i}] - {module['title']}")
+            print("\nEscolha os módulos que você quer baixar:")
+            print("[0] - Baixar todos os módulos")
+            for i, module in enumerate(modules, 1):
+                print(f"[{i}] - {module['title']}")
 
-        choices = input("Digite os números dos módulos separados por vírgula (ex: 1, 3, 5): ")
-        selected_modules = [modules[int(choice.strip()) - 1] for choice in choices.split(",")]
-
-        for module in selected_modules:
-            module_title = module["title"]
-            course_name = module.get("course", {}).get("title", "Sem Nome")
-            print(f"\nBaixando módulo: {module_title} do curso: {course_name}")
-            save_path = Path("Cursos") / specialization_name / sanitize_string(course_name) / sanitize_string(module_title)
-            save_path.mkdir(parents=True, exist_ok=True)
-
-            # Verifica se o módulo tem um cluster_slug
-            if "cluster_slug" in module and module["cluster_slug"]:
-                cluster_slug = module["cluster_slug"]
-                print(f"Usando cluster_slug: {cluster_slug}")
-                
-                # Obter grupos e aulas a partir do cluster_slug
-                groups = self.__load_lessons_from_cluster(cluster_slug)
-                
-                if not groups:
-                    print(f"Nenhum grupo encontrado para o módulo: {module_title}")
-                    continue
-                
-                # Baixa cada grupo sequencialmente
-                for group_index, group in enumerate(groups, 1):
-                    group_title = group["title"]
-                    print(f"\nProcessando grupo {group_index}: {group_title}")
-                    
-                    # Baixa cada aula do grupo
-                    for lesson_index, lesson in enumerate(group["lessons"], 1):
-                        self._download_lesson(lesson, save_path, group_index, lesson_index)
-                    
-                    print(f"Grupo {group_index} ({group_title}) concluído!")
+            choices = input("Digite 0 para baixar todos os módulos ou os números dos módulos separados por vírgula (ex: 1, 3, 5): ")
+            
+            if choices.strip() == "0":
+                selected_modules = modules
+                print("\nBaixando todos os módulos...")
             else:
-                print(f"Módulo não possui cluster_slug: {module_title}. Pulando.")
-                continue
+                selected_modules = [modules[int(choice.strip()) - 1] for choice in choices.split(",")]
+
+            for module in selected_modules:
+                module_title = module["title"]
+                course_name = module.get("course", {}).get("title", "Sem Nome")
+                print(f"\nBaixando módulo: {module_title} do curso: {course_name}")
+                save_path = Path("Cursos") / specialization_name / sanitize_string(course_name) / sanitize_string(module_title)
+                save_path.mkdir(parents=True, exist_ok=True)
+
+                # Verifica se o módulo tem um cluster_slug
+                if "cluster_slug" in module and module["cluster_slug"]:
+                    cluster_slug = module["cluster_slug"]
+                    print(f"Usando cluster_slug: {cluster_slug}")
+                    
+                    # Obter grupos e aulas a partir do cluster_slug
+                    groups = self.__load_lessons_from_cluster(cluster_slug)
+                    
+                    if not groups:
+                        print(f"Nenhum grupo encontrado para o módulo: {module_title}")
+                        continue
+                    
+                    # Baixa cada grupo sequencialmente
+                    for group_index, group in enumerate(groups, 1):
+                        group_title = group["title"]
+                        print(f"\nProcessando grupo {group_index}: {group_title}")
+                        
+                        # Baixa cada aula do grupo
+                        for lesson_index, lesson in enumerate(group["lessons"], 1):
+                            self._download_lesson(lesson, save_path, group_index, lesson_index)
+                        
+                        print(f"Grupo {group_index} ({group_title}) concluído!")
+                else:
+                    print(f"Módulo não possui cluster_slug: {module_title}. Pulando.")
+                    continue
+        finally:
+            self.download_report.finish()
 
     def select_specializations(self):
         print("Buscando especializações disponíveis...")
         params = {
             "types[0]": "SPECIALIZATION",
-            "limit": "12",
+            "types[1]": "COURSE",
+            "types[2]": "EXTRA",
+            "limit": "60",
             "offset": "0",
             "page": "1",
             "sort_by": "relevance",
