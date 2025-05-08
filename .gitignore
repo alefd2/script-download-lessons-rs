@@ -3,7 +3,8 @@ logs
 /cache
 /Cursos
 /.temp
-/relatorio
+/relatorios
+/docs
 
 .session.pkl
 teste.html
