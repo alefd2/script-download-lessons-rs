@@ -1,40 +1,41 @@
-# Documentation
+# Documentação
 
-This script provides instructions for setting up and running a Dockerized Python application for downloading lessons. Below is a breakdown of the commands and their purposes:
+Este script fornece instruções para configurar e executar uma aplicação Python Dockerizada para download de aulas. Abaixo está uma descrição dos comandos e seus propósitos:
 
-1. **Build the Docker Image**:
-    - `docker-compose build`: Builds the Docker image for the application.
+1. **Construir a Imagem Docker**:
+    - `docker-compose build`: Constrói a imagem Docker para a aplicação.
 
-2. **Run the Application**:
-    - `docker-compose run --rm rocket_download`: Runs the application in a one-off container and removes the container after execution.
+2. **Executar a Aplicação**:
+    - `docker-compose run --rm rocket_download`: Executa a aplicação em um container temporário e remove o container após a execução.
 
-3. **Start the Application in Detached Mode**:
-    - `docker-compose up -d --build`: Starts the application in detached mode, rebuilding the image if necessary.
+3. **Iniciar a Aplicação em Modo Desanexado**:
+    - `docker-compose up -d --build`: Inicia a aplicação em modo desanexado, reconstruindo a imagem se necessário.
 
-4. **Access the Running Container**:
-    - `docker compose exec rocket_download bash`: Opens a bash shell inside the running container for debugging or manual execution.
+4. **Acessar o Container em Execução**:
+    - `docker compose exec rocket_download bash`: Abre um shell bash dentro do container em execução para depuração ou execução manual.
 
-5. **Run the Python Script**:
-    - `python main.py`: Executes the main Python script inside the container.
+5. **Executar o Script Python**:
+    - `python main.py`: Executa o script Python principal dentro do container.
 
-6. **Local Development Setup**:
-    - `RUN pip install --no-cache-dir -r requirements.txt`: Installs the required Python dependencies locally without caching.
-    - `python main.py`: Runs the Python script locally after setting up the environment.
-    7. **Run Locally**:
-        - To run the application locally without Docker, ensure all dependencies are installed using:
-            - `pip install --no-cache-dir -r requirements.txt`
-        - Then execute the script:
-            - `python main.py`
+6. **Configuração para Desenvolvimento Local**:
+    - `RUN pip install --no-cache-dir -r requirements.txt`: Instala as dependências Python necessárias localmente sem cache.
+    - `python main.py`: Executa o script Python localmente após configurar o ambiente.
 
-    8. **Set Up Virtual Environment**:
-        - To isolate dependencies, create and activate a virtual environment:
-            - On Unix/macOS:
-                - `python3 -m venv venv`
-                - `source venv/bin/activate`
-            - On Windows:
-                - `python -m venv venv`
-                - `venv\Scripts\activate`
-        - Install dependencies within the virtual environment:
-            - `pip install --no-cache-dir -r requirements.txt`
-        - Run the script:
-            - `python main.py`
+7. **Executar Localmente**:
+    - Para executar a aplicação localmente sem Docker, certifique-se de que todas as dependências estejam instaladas usando:
+        - `pip install --no-cache-dir -r requirements.txt`
+    - Em seguida, execute o script:
+        - `python main.py`
+
+8. **Configurar Ambiente Virtual**:
+    - Para isolar dependências, crie e ative um ambiente virtual:
+        - Em Unix/macOS:
+            - `python3 -m venv venv`
+            - `source venv/bin/activate`
+        - Em Windows:
+            - `python -m venv venv`
+            - `venv\Scripts\activate`
+    - Instale as dependências dentro do ambiente virtual:
+        - `pip install --no-cache-dir -r requirements.txt`
+    - Execute o script:
+        - `python main.py`
