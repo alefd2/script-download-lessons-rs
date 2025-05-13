@@ -2,6 +2,31 @@
 
 Este script fornece instruções para configurar e executar uma aplicação Python Dockerizada para download de aulas. Abaixo está uma descrição dos comandos e seus propósitos:
 
+## Estrutura de Pastas
+
+Abaixo está a estrutura de pastas esperada para o projeto:
+
+```
+/home/alefws/www/projects/script-download-lessons-rs/
+├── cache/
+├── .temp/
+├── Cursos/
+├── logs/
+├── relatórios/
+├── venv/
+├── docker-compose.yml
+├── Dockerfile
+├── readme.md
+├── requirements.txt
+├── main.py
+└── src/
+    ├── __init__.py
+    ├── utils.py
+    └── downloader.py
+```
+
+## Comandos
+
 1. **Construir a Imagem Docker**:
     - `docker-compose build`: Constrói a imagem Docker para a aplicação.
 
