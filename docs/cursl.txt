@@ -1,0 +1,45 @@
+Curl dos pacotes
+
+    curl 'https://vz-dc851587-83d.b-cdn.net/92007a64-3353-4841-bd5f-9f6be8d9c2e4/1080p/video2.ts' \
+    -H 'sec-ch-ua-platform: "Linux"' \
+    -H 'Referer: https://iframe.mediadelivery.net/' \
+    -H 'User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36' \
+    -H 'sec-ch-ua: "Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"' \
+    -H 'DNT: 1' \
+    -H 'sec-ch-ua-mobile: ?0'
+
+Curl da playlist
+
+    curl --location 'https://vz-dc851587-83d.b-cdn.net/92007a64-3353-4841-bd5f-9f6be8d9c2e4/playlist.m3u8' \
+    --header 'accept: */*' \
+    --header 'accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7,it;q=0.6' \
+    --header 'dnt: 1' \
+    --header 'origin: https://iframe.mediadelivery.net' \
+    --header 'priority: u=1, i' \
+    --header 'referer: https://iframe.mediadelivery.net/' \
+    --header 'sec-ch-ua: "Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"' \
+    --header 'sec-ch-ua-mobile: ?0' \
+    --header 'sec-ch-ua-platform: "Linux"' \
+    --header 'sec-fetch-dest: empty' \
+    --header 'sec-fetch-mode: cors' \
+    --header 'sec-fetch-site: cross-site' \
+    --header 'user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
+
+    Curl do video.m3u8
+
+        curl --location 'https://vz-dc851587-83d.b-cdn.net/92007a64-3353-4841-bd5f-9f6be8d9c2e4/1080p/video.m3u8' \
+        --header 'accept: */*' \
+        --header 'accept-language: pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7,it;q=0.6' \
+        --header 'dnt: 1' \
+        --header 'if-modified-since: Wed, 13 Mar 2024 20:32:40 GMT' \
+        --header 'if-none-match: "65f20d68-237"' \
+        --header 'origin: https://iframe.mediadelivery.net' \
+        --header 'priority: u=1, i' \
+        --header 'referer: https://iframe.mediadelivery.net/' \
+        --header 'sec-ch-ua: "Google Chrome";v="135", "Not-A.Brand";v="8", "Chromium";v="135"' \
+        --header 'sec-ch-ua-mobile: ?0' \
+        --header 'sec-ch-ua-platform: "Linux"' \
+        --header 'sec-fetch-dest: empty' \
+        --header 'sec-fetch-mode: cors' \
+        --header 'sec-fetch-site: cross-site' \
+        --header 'user-agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
