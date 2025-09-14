@@ -643,11 +643,12 @@ class Rocketseat:
             else:
                 selected_modules = [modules[int(choice.strip()) - 1] for choice in choices.split(",")]
 
-            for module in selected_modules:
+            for i, module in enumerate(selected_modules, 1):
                 module_title = module["title"]
-                course_name = module.get("course", {}).get("title", "Sem Nome")
-                print(f"\nBaixando módulo: {module_title} do curso: {course_name}")
-                save_path = Path("Cursos") / specialization_name / sanitize_string(course_name) / sanitize_string(module_title)
+                module_folder_name = f"{i:02d}-{module_title}"
+                
+                print(f"\nBaixando módulo: {module_title}")
+                save_path = Path("Cursos") / specialization_name / module_folder_name
                 save_path.mkdir(parents=True, exist_ok=True)
 
                 # Verifica se o módulo tem um cluster_slug
