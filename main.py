@@ -471,38 +471,22 @@ class Rocketseat:
         start_time = time.time()
         
         # Get modules data from API
-        url = f"{BASE_API}/v2/journeys/{specialization_slug}/progress/temp"
+        url = f"{BASE_API}/v2/journeys/{specialization_slug}/details"
         res = self.session.get(url)
         res.raise_for_status()
 
         modules_data = []
         
-        # type: 'challenge', e que o title começe com Quiz
-        # challenge: {slug: 'quiz-formacao-desenvolvimento-ia-estatistica'}
-
         try:
-            progress_data = res.json()
-            modules_data = progress_data.get("nodes", [])
-
-            journey_url = f"https://app.rocketseat.com.br/journey/{specialization_slug}/contents"
-            html_content = self.session.get(journey_url).text
+            journey_details = res.json()
+            modules_data = journey_details.get("nodes", [])
 
             for module in modules_data:
-                if module.get("type") == "cluster":
-                    search_pattern = f'<a class="w-full" href="/classroom/'
-                    html_pos = html_content.find(search_pattern)
-                    if html_pos != -1:
-                        start_pos = html_pos + len(search_pattern)
-                        end_pos = html_content.find('"', start_pos)
-                        cluster_slug = html_content[start_pos:end_pos]
-                        print(f"Encontrado cluster_slug para módulo {module['title']}: {cluster_slug}")
-                        module["cluster_slug"] = cluster_slug
-                        html_content = html_content[end_pos:]
-                    else:
-                        print(f"Não encontrado cluster_slug para módulo {module['title']}")
-                        module["cluster_slug"] = None
+                if "slug" in module and module["slug"]:
+                    module["cluster_slug"] = module["slug"]
+                    print(f"Encontrado slug para módulo {module['title']}: {module['slug']}")
                 else:
-                    print(f"Módulo {module['title']} não é do tipo cluster")
+                    print(f"Não encontrado slug para módulo {module['title']}")
                     module["cluster_slug"] = None
 
             print(f"Encontrados {len(modules_data)} módulos.")
@@ -532,27 +516,30 @@ class Rocketseat:
                     json.dump(module_data, f, indent=2)
             
             groups = []
-            if "cluster" in module_data and module_data["cluster"]:
-                cluster = module_data["cluster"]
+            
+            lesson_groups = []
+            if module_data.get("type") == "group" and "group" in module_data and module_data["group"]:
+                lesson_groups.append(module_data["group"])
+            elif "cluster" in module_data and module_data["cluster"]:
+                lesson_groups = module_data["cluster"].get("groups", [])
+
+            for group in lesson_groups:
+                group_title = group.get('title', 'Sem Grupo')
+                print(f"\nProcessando grupo: {group_title}")
                 
-                # Navegar pelos grupos de lições
-                for group in cluster.get("groups", []):
-                    group_title = group.get('title', 'Sem Grupo')
-                    print(f"\nProcessando grupo: {group_title}")
-                    
-                    group_lessons = []
-                    for lesson in group.get("lessons", []):
-                        if "last" in lesson and lesson["last"]:
-                            lesson_data = lesson["last"]
-                            lesson_data["group_title"] = group_title
-                            print(f"Adicionando aula: {lesson_data.get('title', 'Sem título')}")
-                            group_lessons.append(lesson_data)
-                    
-                    if group_lessons:
-                        groups.append({
-                            "title": group_title,
-                            "lessons": group_lessons
-                        })
+                group_lessons = []
+                for lesson in group.get("lessons", []):
+                    if "last" in lesson and lesson["last"]:
+                        lesson_data = lesson["last"]
+                        lesson_data["group_title"] = group_title
+                        print(f"Adicionando aula: {lesson_data.get('title', 'Sem título')}")
+                        group_lessons.append(lesson_data)
+                
+                if group_lessons:
+                    groups.append({
+                        "title": group_title,
+                        "lessons": group_lessons
+                    })
             
             print(f"\nEncontrados {len(groups)} grupos com um total de {sum(len(g['lessons']) for g in groups)} lições")
             return groups
@@ -656,11 +643,12 @@ class Rocketseat:
             else:
                 selected_modules = [modules[int(choice.strip()) - 1] for choice in choices.split(",")]
 
-            for module in selected_modules:
+            for i, module in enumerate(selected_modules, 1):
                 module_title = module["title"]
-                course_name = module.get("course", {}).get("title", "Sem Nome")
-                print(f"\nBaixando módulo: {module_title} do curso: {course_name}")
-                save_path = Path("Cursos") / specialization_name / sanitize_string(course_name) / sanitize_string(module_title)
+                module_folder_name = f"{i:02d}-{module_title}"
+                
+                print(f"\nBaixando módulo: {module_title}")
+                save_path = Path("Cursos") / specialization_name / module_folder_name
                 save_path.mkdir(parents=True, exist_ok=True)
 
                 # Verifica se o módulo tem um cluster_slug
