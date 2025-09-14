@@ -471,38 +471,22 @@ class Rocketseat:
         start_time = time.time()
         
         # Get modules data from API
-        url = f"{BASE_API}/v2/journeys/{specialization_slug}/progress/temp"
+        url = f"{BASE_API}/v2/journeys/{specialization_slug}/details"
         res = self.session.get(url)
         res.raise_for_status()
 
         modules_data = []
         
-        # type: 'challenge', e que o title começe com Quiz
-        # challenge: {slug: 'quiz-formacao-desenvolvimento-ia-estatistica'}
-
         try:
-            progress_data = res.json()
-            modules_data = progress_data.get("nodes", [])
-
-            journey_url = f"https://app.rocketseat.com.br/journey/{specialization_slug}/contents"
-            html_content = self.session.get(journey_url).text
+            journey_details = res.json()
+            modules_data = journey_details.get("nodes", [])
 
             for module in modules_data:
-                if module.get("type") == "cluster":
-                    search_pattern = f'<a class="w-full" href="/classroom/'
-                    html_pos = html_content.find(search_pattern)
-                    if html_pos != -1:
-                        start_pos = html_pos + len(search_pattern)
-                        end_pos = html_content.find('"', start_pos)
-                        cluster_slug = html_content[start_pos:end_pos]
-                        print(f"Encontrado cluster_slug para módulo {module['title']}: {cluster_slug}")
-                        module["cluster_slug"] = cluster_slug
-                        html_content = html_content[end_pos:]
-                    else:
-                        print(f"Não encontrado cluster_slug para módulo {module['title']}")
-                        module["cluster_slug"] = None
+                if "slug" in module and module["slug"]:
+                    module["cluster_slug"] = module["slug"]
+                    print(f"Encontrado slug para módulo {module['title']}: {module['slug']}")
                 else:
-                    print(f"Módulo {module['title']} não é do tipo cluster")
+                    print(f"Não encontrado slug para módulo {module['title']}")
                     module["cluster_slug"] = None
 
             print(f"Encontrados {len(modules_data)} módulos.")
