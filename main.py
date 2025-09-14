@@ -532,27 +532,30 @@ class Rocketseat:
                     json.dump(module_data, f, indent=2)
             
             groups = []
-            if "cluster" in module_data and module_data["cluster"]:
-                cluster = module_data["cluster"]
+            
+            lesson_groups = []
+            if module_data.get("type") == "group" and "group" in module_data and module_data["group"]:
+                lesson_groups.append(module_data["group"])
+            elif "cluster" in module_data and module_data["cluster"]:
+                lesson_groups = module_data["cluster"].get("groups", [])
+
+            for group in lesson_groups:
+                group_title = group.get('title', 'Sem Grupo')
+                print(f"\nProcessando grupo: {group_title}")
                 
-                # Navegar pelos grupos de lições
-                for group in cluster.get("groups", []):
-                    group_title = group.get('title', 'Sem Grupo')
-                    print(f"\nProcessando grupo: {group_title}")
-                    
-                    group_lessons = []
-                    for lesson in group.get("lessons", []):
-                        if "last" in lesson and lesson["last"]:
-                            lesson_data = lesson["last"]
-                            lesson_data["group_title"] = group_title
-                            print(f"Adicionando aula: {lesson_data.get('title', 'Sem título')}")
-                            group_lessons.append(lesson_data)
-                    
-                    if group_lessons:
-                        groups.append({
-                            "title": group_title,
-                            "lessons": group_lessons
-                        })
+                group_lessons = []
+                for lesson in group.get("lessons", []):
+                    if "last" in lesson and lesson["last"]:
+                        lesson_data = lesson["last"]
+                        lesson_data["group_title"] = group_title
+                        print(f"Adicionando aula: {lesson_data.get('title', 'Sem título')}")
+                        group_lessons.append(lesson_data)
+                
+                if group_lessons:
+                    groups.append({
+                        "title": group_title,
+                        "lessons": group_lessons
+                    })
             
             print(f"\nEncontrados {len(groups)} grupos com um total de {sum(len(g['lessons']) for g in groups)} lições")
             return groups
